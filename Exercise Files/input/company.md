@@ -1,0 +1,2 @@
+### About the Company 
+BookHub is a new startup that aims to provide an online marketplace for book publishers around the world. The company provides a user interface to people to search and order books online. The company makes money when a user orders a book from the platform. They charge a commission on each book sold from the respective publisher. In order for them to be successful, they need to provide two very different set of APIs - one for the publishers to upload their books and the other for the users to search and order books.

@@ -1,0 +1,392 @@
+openapi: 3.0.3
+info:
+  title: BookHub Publisher API - Create Book
+  description: API for publishers to create books on the BookHub platform
+  version: 1.0.0
+  contact:
+    name: BookHub API Support
+    email: api-support@bookhub.com
+
+servers:
+  - url: http://localhost:4010
+    description: Mock server (Prism)
+  - url: https://api.bookhub.com
+    description: Production
+
+security:
+  - bearerAuth: []
+
+paths:
+  /api/v1/books:
+    post:
+      summary: Create a new book
+      description: |
+        Creates a new book with PENDING status. The book must be finalized 
+        before it becomes available to users.
+      operationId: createBook
+      tags:
+        - Books
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateBookRequest'
+            examples:
+              minimal:
+                summary: Minimal request (required fields only)
+                value:
+                  title: "The Art of API Design"
+                  author: "Jane Developer"
+                  isbn: "978-3-16-148410-0"
+                  price: 29.99
+              complete:
+                summary: Complete request (all fields)
+                value:
+                  title: "The Art of API Design"
+                  author: "Jane Developer"
+                  description: "A comprehensive guide to designing robust APIs"
+                  language: "en"
+                  publishedDate: "2025-01-15"
+                  isbn: "978-3-16-148410-0"
+                  price: 29.99
+                  coverImages:
+                    - "https://cdn.bookhub.com/covers/api-design.jpg"
+                  genres:
+                    - "Technology"
+                    - "Programming"
+                  bookFormat: "Paperback"
+      responses:
+        '201':
+          description: Book created successfully
+          headers:
+            Location:
+              schema:
+                type: string
+              description: URL to the created book resource
+              example: /api/v1/books/507f1f77bcf86cd799439011
+            X-RateLimit-Limit:
+              schema:
+                type: integer
+              description: Rate limit ceiling
+              example: 100
+            X-RateLimit-Remaining:
+              schema:
+                type: integer
+              description: Remaining requests in window
+              example: 99
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateBookSuccessResponse'
+              example:
+                status: success
+                data:
+                  bookId: "507f1f77bcf86cd799439011"
+                  title: "The Art of API Design"
+                  author: "Jane Developer"
+                  description: "A comprehensive guide to designing robust APIs"
+                  language: "en"
+                  publisher: "pub_12345"
+                  publishedDate: "2025-01-15"
+                  isbn: "978-3-16-148410-0"
+                  price: 29.99
+                  status: "PENDING"
+                  createdDate: "2025-12-02T18:30:00Z"
+                  updatedDate: "2025-12-02T18:30:00Z"
+                  inactiveDate: null
+                  coverImages:
+                    - "https://cdn.bookhub.com/covers/api-design.jpg"
+                  genres:
+                    - "Technology"
+                    - "Programming"
+                  bookFormat: "Paperback"
+                  ratingsByStars: {}
+                  numberOfReviews: 0
+                message: "Book created successfully. Use PATCH /api/v1/books/{bookId}/finalize to make it available to users."
+                links:
+                  self: "/api/v1/books/507f1f77bcf86cd799439011"
+                  finalize: "/api/v1/books/507f1f77bcf86cd799439011/finalize"
+                  update: "/api/v1/books/507f1f77bcf86cd799439011"
+                  delete: "/api/v1/books/507f1f77bcf86cd799439011"
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationErrorResponse'
+              example:
+                status: error
+                code: "VALIDATION_ERROR"
+                message: "Request validation failed"
+                errors:
+                  - field: "title"
+                    message: "Title is required"
+                    value: null
+                  - field: "price"
+                    message: "Price must be a non-negative number"
+                    value: -5.99
+                requestId: "req_abc123xyz"
+                timestamp: "2025-12-02T18:30:00Z"
+        '401':
+          description: Authentication failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                status: error
+                code: "INVALID_AUTH_TOKEN"
+                message: "Invalid authentication token"
+                requestId: "req_abc123xyz"
+                timestamp: "2025-12-02T18:30:00Z"
+        '403':
+          description: Insufficient permissions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                status: error
+                code: "INSUFFICIENT_PERMISSIONS"
+                message: "You do not have permission to create books"
+                details:
+                  requiredPermission: "books:create"
+                requestId: "req_abc123xyz"
+                timestamp: "2025-12-02T18:30:00Z"
+        '409':
+          description: Duplicate ISBN
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                status: error
+                code: "DUPLICATE_ISBN"
+                message: "A book with this ISBN already exists"
+                details:
+                  isbn: "978-3-16-148410-0"
+                  existingBookId: "507f1f77bcf86cd799439011"
+                requestId: "req_abc123xyz"
+                timestamp: "2025-12-02T18:30:00Z"
+        '429':
+          description: Rate limit exceeded
+          headers:
+            Retry-After:
+              schema:
+                type: integer
+              description: Seconds to wait before retrying
+              example: 45
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                status: error
+                code: "RATE_LIMIT_EXCEEDED"
+                message: "Too many requests. Please try again later."
+                details:
+                  limit: 100
+                  windowSeconds: 60
+                  retryAfterSeconds: 45
+                requestId: "req_abc123xyz"
+                timestamp: "2025-12-02T18:30:00Z"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT token containing publisherId and permissions
+
+  schemas:
+    CreateBookRequest:
+      type: object
+      required:
+        - title
+        - author
+        - isbn
+        - price
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 500
+          description: The title of the book
+          example: "The Art of API Design"
+        author:
+          type: string
+          minLength: 1
+          maxLength: 200
+          description: The author of the book
+          example: "Jane Developer"
+        description:
+          type: string
+          maxLength: 5000
+          description: A detailed description of the book
+          example: "A comprehensive guide to designing robust APIs"
+        language:
+          type: string
+          pattern: '^[a-z]{2}(-[A-Z]{2})?$'
+          default: "en"
+          description: Language code in ISO 639-1 format
+          example: "en"
+        publishedDate:
+          type: string
+          format: date
+          description: Publication date (YYYY-MM-DD)
+          example: "2025-01-15"
+        isbn:
+          type: string
+          description: ISBN-10 or ISBN-13
+          example: "978-3-16-148410-0"
+        price:
+          type: number
+          minimum: 0
+          description: Price in USD
+          example: 29.99
+        coverImages:
+          type: array
+          items:
+            type: string
+            format: uri
+          maxItems: 10
+          description: Cover image URLs
+          example: ["https://cdn.bookhub.com/covers/api-design.jpg"]
+        genres:
+          type: array
+          items:
+            type: string
+            minLength: 1
+            maxLength: 50
+          maxItems: 10
+          description: Genre classifications
+          example: ["Technology", "Programming"]
+        bookFormat:
+          type: string
+          enum:
+            - Paperback
+            - Hardcover
+            - eBook
+          description: The format of the book
+          example: "Paperback"
+
+    CreateBookSuccessResponse:
+      type: object
+      required:
+        - status
+        - data
+        - message
+      properties:
+        status:
+          type: string
+          enum: [success]
+        data:
+          $ref: '#/components/schemas/Book'
+        message:
+          type: string
+        links:
+          type: object
+          properties:
+            self:
+              type: string
+            finalize:
+              type: string
+            update:
+              type: string
+            delete:
+              type: string
+
+    Book:
+      type: object
+      properties:
+        bookId:
+          type: string
+          description: Unique identifier (MongoDB ObjectId)
+        title:
+          type: string
+        author:
+          type: string
+        description:
+          type: string
+          nullable: true
+        language:
+          type: string
+        publisher:
+          type: string
+        publishedDate:
+          type: string
+          format: date
+          nullable: true
+        isbn:
+          type: string
+        price:
+          type: number
+        status:
+          type: string
+          enum: [PENDING, ACTIVE, INACTIVE]
+        createdDate:
+          type: string
+          format: date-time
+        updatedDate:
+          type: string
+          format: date-time
+        inactiveDate:
+          type: string
+          format: date-time
+          nullable: true
+        coverImages:
+          type: array
+          items:
+            type: string
+        genres:
+          type: array
+          items:
+            type: string
+        bookFormat:
+          type: string
+          nullable: true
+        ratingsByStars:
+          type: object
+        numberOfReviews:
+          type: integer
+
+    ErrorResponse:
+      type: object
+      required:
+        - status
+        - code
+        - message
+      properties:
+        status:
+          type: string
+          enum: [error]
+        code:
+          type: string
+        message:
+          type: string
+        details:
+          type: object
+        requestId:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+
+    ValidationErrorResponse:
+      allOf:
+        - $ref: '#/components/schemas/ErrorResponse'
+        - type: object
+          properties:
+            errors:
+              type: array
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                  message:
+                    type: string
+                  value: {}
+

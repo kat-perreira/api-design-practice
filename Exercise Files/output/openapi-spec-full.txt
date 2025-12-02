@@ -1,0 +1,492 @@
+openapi: 3.0.3
+info:
+  title: BookHub Publisher API
+  description: |
+    BookHub's Publisher API enables programmatic management of book inventory on the BookHub marketplace. 
+    This API uses date-based versioning through headers and requires authentication via JWT tokens.
+    
+    ## Versioning
+    The API supports different versions through the api-version header:
+    - 2024-12-25: Initial stable release
+    - 2025-02-02-preview: Beta features including bulk upload
+    - 2025-03-15: Latest stable release with enhanced features
+    
+    ## Rate Limiting
+    Version-specific rate limits apply:
+    - 2024-12-25: 100 requests/minute
+    - 2025-02-02-preview: 200 requests/minute
+    - 2025-03-15: 150 requests/minute
+  version: '2025-03-15'
+  contact:
+    name: BookHub API Support
+    email: api-support@bookhub.com
+    url: https://docs.bookhub.com
+
+servers:
+  - url: https://api.bookhub.com/api
+    description: Production server
+
+security:
+  - BearerAuth: []
+  - ApiVersion: []
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT token obtained from the authentication endpoint
+    ApiVersion:
+      type: apiKey
+      in: header
+      name: api-version
+      description: Date-based API version (e.g., 2024-12-25, 2025-03-15)
+
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      description: Unique identifier for request deduplication
+      required: false
+      schema:
+        type: string
+        format: uuid
+    RequestId:
+      name: X-Request-ID
+      in: header
+      description: Request tracking identifier
+      required: false
+      schema:
+        type: string
+    PublisherId:
+      name: X-Publisher-ID
+      in: header
+      description: Publisher identifier
+      required: false
+      schema:
+        type: string
+    ApiVersion:
+      name: api-version
+      in: header
+      description: API version date
+      required: true
+      schema:
+        type: string
+        enum:
+          - '2024-12-25'
+          - '2025-02-02-preview'
+          - '2025-03-15'
+    PageParam:
+      name: page
+      in: query
+      description: Page number for pagination
+      schema:
+        type: integer
+        default: 1
+        minimum: 1
+    LimitParam:
+      name: limit
+      in: query
+      description: Number of items per page
+      schema:
+        type: integer
+        default: 20
+        maximum: 100
+    StatusParam:
+      name: status
+      in: query
+      description: Filter by book status
+      schema:
+        type: string
+        enum: [PENDING, ACTIVE, INACTIVE]
+    SortParam:
+      name: sort
+      in: query
+      description: Sort field
+      schema:
+        type: string
+        enum: [createdDate, title]
+    OrderParam:
+      name: order
+      in: query
+      description: Sort order
+      schema:
+        type: string
+        enum: [asc, desc]
+
+  responses:
+    ErrorResponse:
+      description: Error response
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    
+    UnauthorizedError:
+      description: Unauthorized access
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    
+    NotFoundError:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    
+    RateLimitError:
+      description: Rate limit exceeded
+      headers:
+        X-RateLimit-Limit:
+          schema:
+            type: integer
+        X-RateLimit-Remaining:
+          schema:
+            type: integer
+        X-RateLimit-Reset:
+          schema:
+            type: integer
+            format: unix-timestamp
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+  schemas:
+    BaseBook:
+      type: object
+      required:
+        - title
+        - author
+        - description
+        - language
+        - publisher
+        - publishedDate
+        - isbn
+        - price
+        - genres
+        - bookFormat
+      properties:
+        title:
+          type: string
+          maxLength: 255
+        author:
+          type: string
+          maxLength: 255
+        description:
+          type: string
+          maxLength: 5000
+        language:
+          type: string
+          pattern: '^[a-z]{2}(-[A-Z]{2})?$'
+        publisher:
+          type: string
+          maxLength: 255
+        publishedDate:
+          type: string
+          format: date
+        isbn:
+          type: string
+          pattern: '^(?:ISBN(?:-1[03])?:? )?(?=[0-9X]{10}$|(?=(?:[0-9]+[- ]){3})[- 0-9X]{13}$|97[89][0-9]{10}$|(?=(?:[0-9]+[- ]){4})[- 0-9]{17}$)(?:97[89][- ]?)?[0-9]{1,5}[- ]?[0-9]+[- ]?[0-9]+[- ]?[0-9X]$'
+        price:
+          type: number
+          minimum: 0.01
+        status:
+          type: string
+          enum: [PENDING, ACTIVE, INACTIVE]
+          default: PENDING
+        coverImages:
+          type: array
+          items:
+            type: string
+            format: uri
+          minItems: 1
+          maxItems: 5
+        genres:
+          type: array
+          items:
+            type: string
+          minItems: 1
+          maxItems: 5
+        bookFormat:
+          type: string
+          enum: [Paperback, Hardcover, eBook]
+
+    PreviewBook:
+      allOf:
+        - $ref: '#/components/schemas/BaseBook'
+        - type: object
+          properties:
+            additional_metadata:
+              type: object
+              properties:
+                edition_number:
+                  type: integer
+                  minimum: 1
+                series_name:
+                  type: string
+                  maxLength: 255
+                series_position:
+                  type: integer
+                  minimum: 1
+            bulk_upload_id:
+              type: string
+              format: uuid
+
+    LatestBook:
+      allOf:
+        - $ref: '#/components/schemas/PreviewBook'
+        - type: object
+          properties:
+            pricing:
+              type: object
+              required:
+                - base_price
+                - currency
+              properties:
+                base_price:
+                  type: number
+                  minimum: 0.01
+                currency:
+                  type: string
+                  enum: [USD, EUR, GBP]
+                promotional_price:
+                  type: number
+                  minimum: 0.01
+                promotional_end_date:
+                  type: string
+                  format: date-time
+
+    ErrorResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [error]
+        message:
+          type: string
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              field:
+                type: string
+              error:
+                type: string
+              description:
+                type: string
+              validation_context:
+                type: object
+                properties:
+                  rule:
+                    type: string
+                  constraint:
+                    type: object
+                  provided_value:
+                    type: object
+
+    Pagination:
+      type: object
+      properties:
+        currentPage:
+          type: integer
+        totalPages:
+          type: integer
+        totalItems:
+          type: integer
+        itemsPerPage:
+          type: integer
+
+paths:
+  /books:
+    post:
+      summary: Create a new book
+      description: Creates a new book with PENDING status
+      operationId: createBook
+      parameters:
+        - $ref: '#/components/parameters/ApiVersion'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/PublisherId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - $ref: '#/components/schemas/BaseBook'
+                - $ref: '#/components/schemas/PreviewBook'
+                - $ref: '#/components/schemas/LatestBook'
+      responses:
+        '201':
+          description: Book created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [success]
+                  message:
+                    type: string
+                  data:
+                    oneOf:
+                      - $ref: '#/components/schemas/BaseBook'
+                      - $ref: '#/components/schemas/PreviewBook'
+                      - $ref: '#/components/schemas/LatestBook'
+        '400':
+          $ref: '#/components/responses/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+
+    get:
+      summary: Get all books
+      description: Retrieves a paginated list of books for the authenticated publisher
+      operationId: getAllBooks
+      parameters:
+        - $ref: '#/components/parameters/ApiVersion'
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/LimitParam'
+        - $ref: '#/components/parameters/StatusParam'
+        - $ref: '#/components/parameters/SortParam'
+        - $ref: '#/components/parameters/OrderParam'
+      responses:
+        '200':
+          description: Successfully retrieved books
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [success]
+                  data:
+                    type: object
+                    properties:
+                      books:
+                        type: array
+                        items:
+                          oneOf:
+                            - $ref: '#/components/schemas/BaseBook'
+                            - $ref: '#/components/schemas/PreviewBook'
+                            - $ref: '#/components/schemas/LatestBook'
+                      pagination:
+                        $ref: '#/components/schemas/Pagination'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+
+  /books/{bookId}:
+    get:
+      summary: Get a specific book
+      description: Retrieves detailed information about a specific book
+      operationId: getBook
+      parameters:
+        - name: bookId
+          in: path
+          required: true
+          schema:
+            type: string
+        - $ref: '#/components/parameters/ApiVersion'
+      responses:
+        '200':
+          description: Successfully retrieved book
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [success]
+                  data:
+                    oneOf:
+                      - $ref: '#/components/schemas/BaseBook'
+                      - $ref: '#/components/schemas/PreviewBook'
+                      - $ref: '#/components/schemas/LatestBook'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+
+  /books/{bookId}/finalize:
+    patch:
+      summary: Finalize a book
+      description: Changes a book's status from PENDING to ACTIVE
+      operationId: finalizeBook
+      parameters:
+        - name: bookId
+          in: path
+          required: true
+          schema:
+            type: string
+        - $ref: '#/components/parameters/ApiVersion'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                notes:
+                  type: string
+                pricing_confirmation:
+                  type: object
+                  properties:
+                    confirmed_base_price:
+                      type: number
+                    confirmed_currency:
+                      type: string
+                    promotional_strategy:
+                      type: object
+                      properties:
+                        initial_promotion:
+                          type: boolean
+                        duration_days:
+                          type: integer
+                skip_warnings:
+                  type: boolean
+      responses:
+        '200':
+          description: Book successfully finalized
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [success]
+                  message:
+                    type: string
+                  data:
+                    type: object
+                    properties:
+                      bookId:
+                        type: string
+                      title:
+                        type: string
+                      status:
+                        type: string
+                      updatedDate:
+                        type: string
+                        format: date-time
+        '400':
+          $ref: '#/components/responses/ErrorResponse'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
