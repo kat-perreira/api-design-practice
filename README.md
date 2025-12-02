@@ -13,7 +13,7 @@ A repository for practicing and mastering API design patterns, best practices, a
 
 Instructions for setup coming soon...
 
-## Topics Covered
+## Topics
 
 - RESTful API design principles
 - API versioning and compatibility
